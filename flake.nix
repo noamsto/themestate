@@ -27,7 +27,20 @@
         pkgs,
         config,
         ...
-      }: {
+      }: let
+        nilaway = pkgs.buildGoModule rec {
+          name = "nilaway";
+          src = pkgs.fetchFromGitHub {
+            owner = "uber-go";
+            repo = "nilaway";
+            rev = "acb8859b9031";
+            hash = "sha256-GvDZ5tlvOrTI93tYcIcLd45ZHdqwFopVtoBffD/kbuM=";
+          };
+          vendorHash = "sha256-qVmvDneq6V/q5UHZ/Cjjqd5/XPPNfvVGoxwg9nz4/Ds=";
+          subPackages = ["cmd/nilaway"];
+          doCheck = false;
+        };
+      in {
         treefmt = {
           projectRootFile = "flake.nix";
           programs = {
@@ -55,8 +68,45 @@
               pkgs.gopls
               pkgs.gotools
               pkgs.golangci-lint
+              nilaway
               config.treefmt.build.wrapper
             ];
+        };
+
+        # Static-analysis and test gates; run via `nix flake check`.
+        checks = {
+          golangci-lint-run =
+            pkgs.runCommand "golangci-lint-run" {
+              nativeBuildInputs = [pkgs.golangci-lint pkgs.go];
+              src = ./.;
+            } ''
+              export HOME="$TMPDIR"
+              cd "$src"
+              golangci-lint run ./... >&2
+              touch "$out"
+            '';
+
+          nilaway-check =
+            pkgs.runCommand "nilaway-check" {
+              nativeBuildInputs = [nilaway pkgs.go];
+              src = ./.;
+            } ''
+              export HOME="$TMPDIR"
+              cd "$src"
+              nilaway -include-pkgs="github.com/noamsto/themestate" ./... >&2
+              touch "$out"
+            '';
+
+          go-test-race =
+            pkgs.runCommand "go-test-race" {
+              nativeBuildInputs = [pkgs.go pkgs.stdenv.cc];
+              src = ./.;
+            } ''
+              export HOME="$TMPDIR"
+              cd "$src"
+              go test -race ./... >&2
+              touch "$out"
+            '';
         };
       };
     };
